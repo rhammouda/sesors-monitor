@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sensor Dashboard</h1>
+        </header>
+
+        <section>
+            <h2>Current Sensor Data</h2>
+            <table>
+                <tr>
+                    <th>Temperature</th>
+                    <td id="temperature">No data yet</td>
+                </tr>
+                <tr>
+                    <th>Humidity</th>
+                    <td id="humidity">No data yet</td>
+                </tr>
+                <tr>
+                    <th>Last Update</th>
+                    <td id="lastUpdate">No data yet</td>
+                </tr>
+            </table>
+            <button id="refreshData">Refresh Data</button>
+        </section>
+
+        <section>
+            <h2>Set Desired Configuration</h2>
+            <form id="configForm">
+                <label for="desiredTemperature">Desired Temperature (°C):</label><br>
+                <input type="number" id="desiredTemperature" name="desiredTemperature" placeholder="Enter temperature"><br>
+
+                <label for="desiredHumidity">Desired Humidity (%):</label><br>
+                <input type="number" id="desiredHumidity" name="desiredHumidity" placeholder="Enter humidity"><br>
+
+                <button type="submit">Save Configuration</button>
+            </form>
+        </section>
+    </div>
+
+    <script>
+        // Fetch current sensor data and configuration
+        function fetchData() {
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('temperature').textContent = data.temperature !== null ? data.temperature + ' °C' : 'No data yet';
+                    document.getElementById('humidity').textContent = data.humidity !== null ? data.humidity + ' %' : 'No data yet';
+                    document.getElementById('lastUpdate').textContent = data.lastUpdate || 'No data yet';
+                });
+
+            fetch('/api/config')
+                .then(response => response.json())
+                .then(config => {
+                    document.getElementById('desiredTemperature').value = config.desiredTemperature || '';
+                    document.getElementById('desiredHumidity').value = config.desiredHumidity || '';
+                });
+        }
+
+        // Handle form submission to save configuration
+        document.getElementById('configForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const desiredTemperature = document.getElementById('desiredTemperature').value;
+            const desiredHumidity = document.getElementById('desiredHumidity').value;
+
+            fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ desiredTemperature, desiredHumidity })
+            })
+            .then(response => {
+                if (response.ok) {
+                    alert('Configuration saved!');
+                } else {
+                    alert('Error saving configuration.');
+                }
+            });
+        });
+
+        // Refresh data manually
+        document.getElementById('refreshData').addEventListener('click', fetchData);
+
+        // Fetch data on page load
+        fetchData();
+    </script>
+</body>
+</html>
