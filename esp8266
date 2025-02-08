@@ -1,0 +1,139 @@
+#include <Wire.h>
+#include <Adafruit_AHTX0.h>
+#include <SSD1306Wire.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ArduinoJson.h>
+#include <EEPROM.h>
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h> // Library for managing WiFi credentials
+
+// Server Configuration
+const char* serverUrl = "http://146.59.235.62:3000/data";  
+
+// Pin Configuration
+#define PUMP_PIN 15 // GPIO15 (D8 on most ESP8266 boards)
+
+// Pump Control
+const int PUMP_DURATION = 5;
+const int CHECK_INTERVAL = 10;
+float humidity, temperature;
+int desired_humidity = 50;
+
+// Sensor Limits
+const float TEMP_MIN = 15.0, TEMP_MAX = 45.0;
+const float HUMIDITY_MIN = 30.0, HUMIDITY_MAX = 90.0;
+
+Adafruit_AHTX0 aht;
+SSD1306Wire display(0x3c, 14, 12);  // OLED Display
+
+void setup() {
+    Serial.begin(115200);
+    while (!Serial);
+
+    // Initialize EEPROM for storing WiFi credentials
+    EEPROM.begin(512);
+
+    // Initialize WiFi Manager
+    WiFiManager wifiManager;
+    wifiManager.autoConnect("ESP8266_Config"); // Start AP mode if no WiFi configured
+
+    Serial.println("Connected to WiFi: " + WiFi.SSID());
+
+    // Initialize I2C and Display
+    Wire.begin(14, 12);  // SDA = GPIO14 (D5), SCL = GPIO12 (D6)
+    display.init();
+
+    if (!aht.begin()) {
+        Serial.println("Could not find AHT sensor, check wiring!");
+        while (1);
+    }
+    Serial.println("AHT10/AHT20 found!");
+
+    pinMode(PUMP_PIN, OUTPUT);
+    digitalWrite(PUMP_PIN, LOW);
+}
+
+void loop() {
+    // Read Sensor Data
+    sensors_event_t humidityEvent, tempEvent;
+    aht.getEvent(&humidityEvent, &tempEvent);
+    humidity = humidityEvent.relative_humidity;
+    temperature = tempEvent.temperature;
+
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.print("%, Temperature: ");
+    Serial.print(temperature);
+    Serial.println("°C");
+
+    display.clear();
+    display.setFont(ArialMT_Plain_10);
+    display.drawString(10, 10, "Temp: " + String(temperature) + " C");
+    display.drawString(10, 30, "Humidity: " + String(humidity) + " %");
+
+    // Check if Sensor Data is in Valid Range
+    if (temperature < TEMP_MIN || temperature > TEMP_MAX || humidity < HUMIDITY_MIN || humidity > HUMIDITY_MAX) {
+        Serial.println("⚠️ WARNING: Sensor values out of range! Pump disabled.");
+        display.drawString(10, 50, "⚠️ Sensor Error! ⚠️");
+        display.display();
+    } else {
+        sendDataToServer();
+
+        // Activate Pump if Humidity is Low
+        if (humidity < desired_humidity) {
+            Serial.println("✅ Activating Pump...");
+            digitalWrite(PUMP_PIN, HIGH);
+            delay(PUMP_DURATION * 1000);
+            digitalWrite(PUMP_PIN, LOW);
+            Serial.println("🚰 Pump Deactivated.");
+        }
+    }
+
+    display.display();
+    delay(CHECK_INTERVAL * 1000);
+}
+
+void sendDataToServer() {
+    if (WiFi.status() == WL_CONNECTED) {
+        WiFiClient client;
+        HTTPClient http;
+        http.begin(client, serverUrl);
+        http.addHeader("Content-Type", "application/json");
+
+        // Create JSON payload
+        StaticJsonDocument<200> jsonDoc;
+        jsonDoc["temperature"] = temperature;
+        jsonDoc["humidity"] = humidity;
+        String requestBody;
+        serializeJson(jsonDoc, requestBody);
+
+        int httpResponseCode = http.POST(requestBody);
+
+        if (httpResponseCode == 200) {
+            String response = http.getString();
+            Serial.println("Server Response: " + response);
+
+            // Parse JSON response
+            StaticJsonDocument<200> responseJson;
+            DeserializationError error = deserializeJson(responseJson, response);
+
+            if (!error && responseJson.containsKey("desiredHumidity")) {
+                int newDesiredHumidity = responseJson["desiredHumidity"];
+                if (newDesiredHumidity != 0) {  // Ensure it's not null or zero
+                    desired_humidity = newDesiredHumidity;
+                    Serial.print("Updated desired humidity: ");
+                    Serial.println(desired_humidity);
+                }
+            }
+        } else {
+            Serial.print("Error sending data. HTTP Response Code: ");
+            Serial.println(httpResponseCode);
+        }
+
+        http.end();
+    } else {
+        Serial.println("WiFi Disconnected. Cannot send data.");
+    }
+}
