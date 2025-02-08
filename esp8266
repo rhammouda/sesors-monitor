@@ -35,11 +35,14 @@ void setup() {
     // Initialize EEPROM for storing WiFi credentials
     EEPROM.begin(512);
 
-    // Initialize WiFi Manager
+    // Initialize WiFi Manager with timeout
     WiFiManager wifiManager;
-    wifiManager.autoConnect("ESP8266_Config"); // Start AP mode if no WiFi configured
-
-    Serial.println("Connected to WiFi: " + WiFi.SSID());
+    wifiManager.setConfigPortalTimeout(300); // 5-minute timeout
+    if (!wifiManager.autoConnect("ESP8266_Config")) {
+        Serial.println("Failed to connect to WiFi. Continuing without WiFi.");
+    } else {
+        Serial.println("Connected to WiFi: " + WiFi.SSID());
+    }
 
     // Initialize I2C and Display
     Wire.begin(14, 12);  // SDA = GPIO14 (D5), SCL = GPIO12 (D6)
