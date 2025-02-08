@@ -10,7 +10,7 @@
 #include <WiFiManager.h> // Library for managing WiFi credentials
 
 // Server Configuration
-const char* serverUrl = "http://146.59.235.62:3000/data";  
+const char* serverUrl = "http://146.59.235.62:3000/data";  // Update with actual server address
 
 // Pin Configuration
 #define PUMP_PIN 15 // GPIO15 (D8 on most ESP8266 boards)
@@ -19,7 +19,7 @@ const char* serverUrl = "http://146.59.235.62:3000/data";
 const int PUMP_DURATION = 5;
 const int CHECK_INTERVAL = 10;
 float humidity, temperature;
-int desired_humidity = 50;
+int desired_humidity;
 
 // Sensor Limits
 const float TEMP_MIN = 15.0, TEMP_MAX = 45.0;
@@ -28,26 +28,56 @@ const float HUMIDITY_MIN = 30.0, HUMIDITY_MAX = 90.0;
 Adafruit_AHTX0 aht;
 SSD1306Wire display(0x3c, 14, 12);  // OLED Display
 
+void saveDesiredHumidity(int value) {
+    EEPROM.put(0, value);
+    EEPROM.commit();
+}
+
+int loadDesiredHumidity() {
+    int value;
+    EEPROM.get(0, value);
+    if (value < HUMIDITY_MIN || value > HUMIDITY_MAX) {
+        value = 50; // Default value if stored value is invalid
+    }
+    return value;
+}
+
 void setup() {
     Serial.begin(115200);
     while (!Serial);
 
-    // Initialize EEPROM for storing WiFi credentials
+    // Initialize EEPROM for storing WiFi credentials and desired humidity
     EEPROM.begin(512);
+    desired_humidity = loadDesiredHumidity();
+
+    // Initialize Display
+    display.init();
+    display.clear();
+    display.setFont(ArialMT_Plain_10);
+    display.drawString(10, 10, "Configuring WiFi...");
+    display.drawString(10, 30, "Connect to ESP8266_Config");
+    display.drawString(10, 50, "to set up WiFi");
+    display.display();
 
     // Initialize WiFi Manager with timeout
     WiFiManager wifiManager;
     wifiManager.setConfigPortalTimeout(300); // 5-minute timeout
     if (!wifiManager.autoConnect("ESP8266_Config")) {
         Serial.println("Failed to connect to WiFi. Continuing without WiFi.");
+        display.clear();
+        display.drawString(10, 10, "WiFi setup failed");
+        display.drawString(10, 30, "Running offline");
+        display.display();
     } else {
         Serial.println("Connected to WiFi: " + WiFi.SSID());
+        display.clear();
+        display.drawString(10, 10, "Connected to WiFi");
+        display.display();
     }
 
     // Initialize I2C and Display
     Wire.begin(14, 12);  // SDA = GPIO14 (D5), SCL = GPIO12 (D6)
-    display.init();
-
+    
     if (!aht.begin()) {
         Serial.println("Could not find AHT sensor, check wiring!");
         while (1);
@@ -126,6 +156,7 @@ void sendDataToServer() {
                 int newDesiredHumidity = responseJson["desiredHumidity"];
                 if (newDesiredHumidity != 0) {  // Ensure it's not null or zero
                     desired_humidity = newDesiredHumidity;
+                    saveDesiredHumidity(desired_humidity);
                     Serial.print("Updated desired humidity: ");
                     Serial.println(desired_humidity);
                 }
