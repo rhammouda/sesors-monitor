@@ -42,6 +42,19 @@ int loadDesiredHumidity() {
     return value;
 }
 
+void drawWiFiStatus() {
+    if (WiFi.status() == WL_CONNECTED) {
+        // Draw a simple WiFi icon (3 curved bars)
+        display.fillRect(110, 2, 2, 2);  // Smallest bar
+        display.fillRect(114, 1, 3, 3);  // Middle bar
+        display.fillRect(119, 0, 4, 4);  // Largest bar
+    } else {
+        // Draw an 'X' for no connection
+        display.drawLine(110, 0, 118, 8);
+        display.drawLine(118, 0, 110, 8);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     while (!Serial);
@@ -64,15 +77,8 @@ void setup() {
     wifiManager.setConfigPortalTimeout(300); // 5-minute timeout
     if (!wifiManager.autoConnect("ESP8266_Config")) {
         Serial.println("Failed to connect to WiFi. Continuing without WiFi.");
-        display.clear();
-        display.drawString(10, 10, "WiFi setup failed");
-        display.drawString(10, 30, "Running offline");
-        display.display();
     } else {
         Serial.println("Connected to WiFi: " + WiFi.SSID());
-        display.clear();
-        display.drawString(10, 10, "Connected to WiFi");
-        display.display();
     }
 
     // Initialize I2C and Display
@@ -105,6 +111,7 @@ void loop() {
     display.setFont(ArialMT_Plain_10);
     display.drawString(10, 10, "Temp: " + String(temperature) + " C");
     display.drawString(10, 30, "Humidity: " + String(humidity) + " %");
+    drawWiFiStatus();
 
     // Check if Sensor Data is in Valid Range
     if (temperature < TEMP_MIN || temperature > TEMP_MAX || humidity < HUMIDITY_MIN || humidity > HUMIDITY_MAX) {
